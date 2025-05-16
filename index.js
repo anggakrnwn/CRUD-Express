@@ -1,11 +1,69 @@
+require('dotenv').config();
+
 const express = require('express');
 const bodyParser = require('body-parser');
-const User = require('./user'); 
+const User = require('./user');
+const { syncModels } = require('./relations');
+const jwt = require('jsonwebtoken');
+const authMiddleware = require('./authMiddleware');
 
 const app = express();
 const PORT = 3000;
 
 app.use(bodyParser.json());
+
+syncModels();
+
+app.post('/register', authMiddleware.optional, async (req, res) => {
+  try {
+    const { name, email, password, roleId } = req.body;
+
+    let finalRoleId = 2;
+    if (req.user && req.user.roleId === 1) {
+      finalRoleId = roleId || 2;
+    }
+
+    const user = await User.create({ name, email, password, roleId: finalRoleId });
+
+    res.status(201).json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      roleId: user.roleId,
+      token: user.generateToken()
+    });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+
+app.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ where: { email } });
+    
+    if (!user) {
+      return res.status(401).json({ message: 'Email atau password salah' });
+    }
+    
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Email atau password salah' });
+    }
+    
+    res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      token: user.generateToken()
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.use(authMiddleware);
 
 app.post('/users', async (req, res) => {
   try {
